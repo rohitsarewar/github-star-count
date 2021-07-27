@@ -9,7 +9,9 @@ from airflow.models import Variable
 import requests
 import psycopg2
 from requests.auth import HTTPBasicAuth
+from star_count_helper.star_count_helper import star_count_helper
 
+    
 default_args = {
     "owner": "airflow",
     "depends_on_past": False,
@@ -27,40 +29,42 @@ default_args = {
 
 dag = DAG("rohit", default_args=default_args, schedule_interval=timedelta(1))
 
-def insert_data():
-    cur.execute('''
+git_conf = {
+    'github_repo_name' : Variable.get("repo_name"),
+    'username' : Variable.get("username"),
+    'password' : Variable.get("password")
+} 
+#git_conf
 
-    ''')
+db_conf = {
+    'db_name' : Variable.get("db_name"),
+    'db_user' : Variable.get("db_user"),
+    'db_password'  : Variable.get("db_password"),
+    'db_host'  : Variable.get("db_host"),
+    'db_port'  : Variable.get("db_port")    
+}
 
+# execution starts here
 def github_star_count():
 
-
     # API CALL
-    github_repo_name  = Variable.get("repo_name")
-    username = Variable.get("username")
-    password = Variable.get("password")
-    r = requests.get('https://api.github.com/repos/'+ github_repo_name, auth = HTTPBasicAuth(username, password)).json()
+    r = star_count_helper.call_api(git_conf)
+    #r = requests.get('https://api.github.com/repos/'+ github_repo_name, auth = HTTPBasicAuth(username, password)).json()
     #r = requests.get('https://api.github.com/repos/'+ github_repo_name).json()
     print("stargazers_count: ",r["stargazers_count"])
     print("watchers_count: ",r["watchers_count"])
     print("forks: ",r["forks"])
     star_count = int(r["stargazers_count"])
 
-    # Database Ingestion
-    con = psycopg2.connect(database="airflow", user="airflow", password="airflow", host="postgres", port="5432")
-    cur = con.cursor()
-    #cur = con.cursor()
-    #cur.execute('create table star_count(repo_name varchar(256), star_count bigint, entry_date DATE NOT NULL DEFAULT CURRENT_DATE)')
-    #con.commit()
-    cur.execute("INSERT INTO star_count (repo_name, star_count) VALUES(%s, %s)", (github_repo_name, str(star_count)))
-    con.commit()
-    cur.close()
+    # Ingest data to DB 
+    star_count_helper.insert_data(db_conf, git_conf.get('github_repo_name'), star_count)
+
     return (str,200)
 
 
 t1 = PythonOperator(
     task_id='GithubStarCount',
-    python_callable= my_function,
+    python_callable= github_star_count,
     #op_kwargs = {"x" : "Apache Airflow"},
     dag=dag,
 )
